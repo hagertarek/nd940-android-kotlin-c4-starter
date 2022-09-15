@@ -1,8 +1,10 @@
 package com.udacity.project4.locationreminders.savereminder
 
 import android.app.Application
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.PointOfInterest
 import com.udacity.project4.R
 import com.udacity.project4.base.BaseViewModel
@@ -21,6 +23,38 @@ class SaveReminderViewModel(val app: Application, val dataSource: ReminderDataSo
     val latitude = MutableLiveData<Double>()
     val longitude = MutableLiveData<Double>()
 
+    val selectedLocation: LiveData<PointOfInterest>
+        get() = selectedPOI
+
+    fun setSelectedLocation(pointOfInterest: PointOfInterest) {
+        selectedPOI.postValue(pointOfInterest)
+        latitude.postValue(pointOfInterest.latLng.latitude)
+        longitude.postValue(pointOfInterest.latLng.longitude)
+    }
+
+    fun setSelectedLocation(latLng: LatLng) {
+        setSelectedLocation(PointOfInterest(latLng, null, null))
+    }
+
+    fun setSelectedLocationText(): String {
+        return if (latitude.value?.toString().isNullOrEmpty() && longitude.value?.toString()
+                .isNullOrEmpty()
+        )
+            ""
+        else {
+            val poiName = selectedLocation.value?.name
+            reminderSelectedLocationStr.value =
+                if (poiName.isNullOrEmpty()) {
+                    app.resources.getString(
+                        R.string.lat_long_snippet,
+                        latitude.value.toString(),
+                        longitude.value.toString()
+                    )
+                } else poiName
+            reminderSelectedLocationStr.value!!
+        }
+    }
+
     /**
      * Clear the live data objects to start fresh next time the view model gets called
      */
@@ -36,16 +70,18 @@ class SaveReminderViewModel(val app: Application, val dataSource: ReminderDataSo
     /**
      * Validate the entered data then saves the reminder data to the DataSource
      */
-    fun validateAndSaveReminder(reminderData: ReminderDataItem) {
+    fun validateAndSaveReminder(reminderData: ReminderDataItem): Boolean {
         if (validateEnteredData(reminderData)) {
             saveReminder(reminderData)
+            return true
         }
+        return false
     }
 
     /**
      * Save the reminder to the data source
      */
-    fun saveReminder(reminderData: ReminderDataItem) {
+    private fun saveReminder(reminderData: ReminderDataItem) {
         showLoading.value = true
         viewModelScope.launch {
             dataSource.saveReminder(
@@ -67,7 +103,7 @@ class SaveReminderViewModel(val app: Application, val dataSource: ReminderDataSo
     /**
      * Validate the entered data and show error to the user if there's any invalid data
      */
-    fun validateEnteredData(reminderData: ReminderDataItem): Boolean {
+    private fun validateEnteredData(reminderData: ReminderDataItem): Boolean {
         if (reminderData.title.isNullOrEmpty()) {
             showSnackBarInt.value = R.string.err_enter_title
             return false
