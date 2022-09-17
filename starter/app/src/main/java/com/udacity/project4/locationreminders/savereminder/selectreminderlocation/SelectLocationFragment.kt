@@ -3,6 +3,7 @@ package com.udacity.project4.locationreminders.savereminder.selectreminderlocati
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity.RESULT_OK
 import android.content.Intent
 import android.content.IntentSender
 import android.content.pm.PackageManager
@@ -22,6 +23,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.GoogleMap.OnMyLocationButtonClickListener
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.*
@@ -44,7 +46,8 @@ const val DEFAULT_RADIUS_IN_METRES = 300f
 val runningQOrLater =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
-class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
+class SelectLocationFragment : BaseFragment(), OnMapReadyCallback,
+    OnMyLocationButtonClickListener {
 
     //Use Koin to get the view model of the SaveReminder
     override val _viewModel: SaveReminderViewModel by sharedViewModel()
@@ -118,8 +121,11 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
         else -> super.onOptionsItemSelected(item)
     }
 
+    @SuppressLint("MissingPermission")
     override fun onMapReady(googleMap: GoogleMap) {
         map = googleMap
+
+        map?.setOnMyLocationButtonClickListener(this)
 
         map?.setMapStyle(
             MapStyleOptions.loadRawResourceStyle(
@@ -128,13 +134,10 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
             )
         )
         _viewModel.selectedPOI.value.let {
-            _viewModel.setSelectedLocation(
-                it ?: PointOfInterest(map?.cameraPosition?.target, null, null)
-            )
-
             if (it == null) {
                 if (foregroundLocationPermissionApproved()) {
-                    checkDeviceLocationSettingsAndStart()
+                    checkDeviceLocationSettings()
+                    map?.isMyLocationEnabled = true
                 } else {
                     requestForegroundLocationPermissions()
                 }
@@ -149,6 +152,11 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
         map?.setOnPoiClickListener {
             _viewModel.setSelectedLocation(it)
         }
+    }
+
+    override fun onMyLocationButtonClick(): Boolean {
+        checkDeviceLocationSettings()
+        return false
     }
 
     private fun addMarkerCurrentLocation(latLng: LatLng) {
@@ -181,8 +189,16 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
                 if (location != null) {
                     val locationLatLng = LatLng(location.latitude, location.longitude)
                     _viewModel.setSelectedLocation(locationLatLng)
+                } else {
+                    _viewModel.setSelectedLocation(
+                        PointOfInterest(
+                            map?.cameraPosition?.target,
+                            null,
+                            null
+                        )
+                    )
                 }
-                map?.isMyLocationEnabled = true
+
             }
 
     }
@@ -199,7 +215,11 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_TURN_DEVICE_LOCATION_ON) {
-            checkDeviceLocationSettingsAndStart(false)
+            if (resultCode == RESULT_OK) {
+                checkDeviceLocationSettings()
+            } else {
+                checkDeviceLocationSettings(false)
+            }
         }
     }
 
@@ -226,7 +246,7 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
         )
     }
 
-    private fun checkDeviceLocationSettingsAndStart(resolve: Boolean = true) {
+    private fun checkDeviceLocationSettings(resolve: Boolean = true) {
         val locationRequest = LocationRequest.create().apply {
             priority = LocationRequest.PRIORITY_LOW_POWER
         }
@@ -254,9 +274,9 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
             } else {
                 Snackbar.make(
                     binding.root,
-                    R.string.location_required_error, Snackbar.LENGTH_INDEFINITE
+                    R.string.location_required_error, Snackbar.LENGTH_LONG
                 ).setAction(android.R.string.ok) {
-                    checkDeviceLocationSettingsAndStart()
+                    checkDeviceLocationSettings()
                 }.show()
             }
         }
@@ -268,6 +288,7 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
         }
     }
 
+    @SuppressLint("MissingPermission")
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
@@ -293,14 +314,8 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
                 }.show()
 
         } else {
-            checkDeviceLocationSettingsAndStart()
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (foregroundLocationPermissionApproved()) {
-            checkDeviceLocationSettingsAndStart()
+            checkDeviceLocationSettings()
+            map?.isMyLocationEnabled = true
         }
     }
 }

@@ -2,6 +2,7 @@ package com.udacity.project4.locationreminders.savereminder
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.IntentSender
@@ -73,13 +74,22 @@ class SaveReminderFragment : BaseFragment() {
 
             reminderData = ReminderDataItem(title, description, location, latitude, longitude)
 
-            if (backgroundLocationPermissionApproved()) {
-                if (_viewModel.validateAndSaveReminder(reminderData)) {
-                    addGeofence(reminderData)
-                }
-            } else {
-                requestForegroundAndBackgroundLocationPermissions()
+            checkPermissionsAndSaveReminder()
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun checkPermissionsAndSaveReminder() {
+        if (foregroundAndBackgroundLocationPermissionApproved()) {
+            checkDeviceLocationSettings{isLocationOn ->
+                if (isLocationOn)
+                    if (_viewModel.validateAndSaveReminder(reminderData)) {
+                        addGeofence(reminderData)
+                    }
+                else checkDeviceLocationSettings()
             }
+        } else {
+            requestForegroundAndBackgroundLocationPermissions()
         }
     }
 
@@ -132,16 +142,28 @@ class SaveReminderFragment : BaseFragment() {
         _viewModel.onClear()
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_TURN_DEVICE_LOCATION_ON) {
-            checkDeviceLocationSettingsAndStart(false)
+            if (resultCode == Activity.RESULT_OK) {
+                checkDeviceLocationSettings()
+            }else {
+                checkDeviceLocationSettings(false)
+            }
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun backgroundLocationPermissionApproved(): Boolean =
-         if (runningQOrLater) {
+    private fun foregroundAndBackgroundLocationPermissionApproved(): Boolean {
+
+        val foregroundPermissionApproved =
+            PackageManager.PERMISSION_GRANTED ==
+                    ActivityCompat.checkSelfPermission(
+                        requireContext(),
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    )
+        val backgroundPermissionApproved = if (runningQOrLater) {
             PackageManager.PERMISSION_GRANTED ==
                     ActivityCompat.checkSelfPermission(
                         requireContext(), Manifest.permission.ACCESS_BACKGROUND_LOCATION
@@ -150,10 +172,13 @@ class SaveReminderFragment : BaseFragment() {
             true
         }
 
+        return foregroundPermissionApproved && backgroundPermissionApproved
+    }
+
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun requestForegroundAndBackgroundLocationPermissions() {
-        if (backgroundLocationPermissionApproved())
+        if (foregroundAndBackgroundLocationPermissionApproved())
             return
 
         var permissionsArray = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -174,7 +199,8 @@ class SaveReminderFragment : BaseFragment() {
     }
 
 
-    private fun checkDeviceLocationSettingsAndStart(resolve: Boolean = true) {
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun checkDeviceLocationSettings(resolve: Boolean = true, isLocationOn : (Boolean) -> Unit = {}) {
         val locationRequest = LocationRequest.create().apply {
             priority = LocationRequest.PRIORITY_LOW_POWER
         }
@@ -200,20 +226,19 @@ class SaveReminderFragment : BaseFragment() {
 
                 }
             } else {
+                isLocationOn.invoke(false)
                 Snackbar.make(
                     binding.root,
-                    R.string.location_required_error, Snackbar.LENGTH_INDEFINITE
+                    R.string.location_required_error, Snackbar.LENGTH_LONG
                 ).setAction(android.R.string.ok) {
-                    checkDeviceLocationSettingsAndStart()
+                    checkDeviceLocationSettings()
                 }.show()
             }
         }
 
         locationSettingsResponseTask.addOnCompleteListener {
             if (it.isSuccessful) {
-                if (_viewModel.validateAndSaveReminder(reminderData)) {
-                    addGeofence(reminderData)
-                }
+                isLocationOn.invoke(true)
             }
         }
     }
@@ -247,7 +272,7 @@ class SaveReminderFragment : BaseFragment() {
                 }.show()
 
         } else {
-            checkDeviceLocationSettingsAndStart()
+            checkDeviceLocationSettings()
         }
     }
 }
